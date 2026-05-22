@@ -12,13 +12,15 @@
   class BulkSelectionManager {
     constructor() {
       this.selectedIds = new Set(); // O(1) lookup performance
+      this.lastSelectedIndex = null; // For Shift+Click range selection
       this.toolbar = document.getElementById('bulkToolbar');
       this.countDisplay = document.getElementById('bulkCount');
       this.selectAllCheckbox = document.getElementById('selectAllCheckbox');
     }
 
-    selectLink(id) {
+    selectLink(id, index = null) {
       this.selectedIds.add(id);
+      if (index !== null) this.lastSelectedIndex = index;
       this.updateUI();
     }
 
@@ -27,12 +29,26 @@
       this.updateUI();
     }
 
-    toggleLink(id) {
+    toggleLink(id, index = null) {
       if (this.selectedIds.has(id)) {
         this.deselectLink(id);
       } else {
-        this.selectLink(id);
+        this.selectLink(id, index);
       }
+    }
+
+    // Range selection with Shift+Click
+    selectRange(startIndex, endIndex) {
+      const checkboxes = Array.from(document.querySelectorAll('.link-checkbox'));
+      const start = Math.min(startIndex, endIndex);
+      const end = Math.max(startIndex, endIndex);
+      
+      for (let i = start; i <= end; i++) {
+        if (checkboxes[i]) {
+          this.selectedIds.add(checkboxes[i].dataset.linkId);
+        }
+      }
+      this.updateUI();
     }
 
     selectAll(linkIds) {
@@ -42,6 +58,7 @@
 
     clearSelection() {
       this.selectedIds.clear();
+      this.lastSelectedIndex = null;
       this.updateUI();
     }
 
@@ -60,7 +77,7 @@
     updateUI() {
       const count = this.getSelectedCount();
       
-      // Update toolbar visibility
+      // Update toolbar visibility with animation
       if (count > 0) {
         this.toolbar.classList.add('visible');
         this.countDisplay.textContent = `${count} selected`;
@@ -73,10 +90,17 @@
         const linkId = checkbox.dataset.linkId;
         checkbox.checked = this.selectedIds.has(linkId);
         
-        // Update parent link item visual state
+        // Update parent link item visual state with animation
         const linkItem = checkbox.closest('.admin-link-item');
         if (linkItem) {
-          linkItem.classList.toggle('selected', this.selectedIds.has(linkId));
+          if (this.selectedIds.has(linkId)) {
+            linkItem.classList.add('selected');
+            // Add scale animation
+            linkItem.style.animation = 'selectPulse 0.3s ease-out';
+            setTimeout(() => linkItem.style.animation = '', 300);
+          } else {
+            linkItem.classList.remove('selected');
+          }
         }
       });
 
@@ -355,6 +379,7 @@
 
     setupDragAndDrop();
     setupBulkSelectionListeners();
+    setupMobileTouchSupport();
     bulkSelection.updateUI();
   }
 
@@ -413,12 +438,120 @@
 
   // ═══════════ BULK SELECTION LISTENERS ═══════════
   function setupBulkSelectionListeners() {
-    // Individual checkbox listeners
-    document.querySelectorAll('.link-checkbox').forEach(checkbox => {
-      checkbox.addEventListener('change', (e) => {
+    // Individual checkbox listeners with Shift+Click and Ctrl+Click support
+    document.querySelectorAll('.link-checkbox').forEach((checkbox, index) => {
+      checkbox.addEventListener('click', (e) => {
         e.stopPropagation();
         const linkId = checkbox.dataset.linkId;
-        bulkSelection.toggleLink(linkId);
+        
+        // Shift+Click: Range selection
+        if (e.shiftKey && bulkSelection.lastSelectedIndex !== null) {
+          e.preventDefault();
+          bulkSelection.selectRange(bulkSelection.lastSelectedIndex, index);
+        }
+        // Ctrl/Cmd+Click: Multi-toggle (already handled by checkbox, just track index)
+        else if (e.ctrlKey || e.metaKey) {
+          bulkSelection.toggleLink(linkId, index);
+        }
+        // Regular click
+        else {
+          bulkSelection.toggleLink(linkId, index);
+        }
+      });
+
+      // Also handle the parent link item click for better UX
+      const linkItem = checkbox.closest('.admin-link-item');
+      if (linkItem) {
+        linkItem.addEventListener('click', (e) => {
+          // Only trigger if clicking on the item itself, not buttons/toggles
+          if (e.target === linkItem || e.target.closest('.admin-link-info') || e.target.closest('.link-checkbox-wrapper')) {
+            if (!e.target.closest('.admin-link-actions') && !e.target.closest('.toggle-switch') && !e.target.closest('.drag-handle')) {
+              checkbox.click();
+            }
+          }
+        });
+      }
+    });
+  }
+
+  // ═══════════ KEYBOARD SHORTCUTS ═══════════
+  function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      // Ignore if typing in input fields
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      // Ctrl/Cmd+A: Select all links
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        const allLinkIds = [...document.querySelectorAll('.link-checkbox')].map(cb => cb.dataset.linkId);
+        if (allLinkIds.length > 0) {
+          bulkSelection.selectAll(allLinkIds);
+          showToast('All links selected');
+        }
+      }
+
+      // Escape: Clear selection
+      if (e.key === 'Escape') {
+        if (bulkSelection.hasSelection()) {
+          bulkSelection.clearSelection();
+          showToast('Selection cleared');
+        }
+      }
+
+      // Delete: Bulk delete selected
+      if (e.key === 'Delete' && bulkSelection.hasSelection()) {
+        e.preventDefault();
+        bulkActions.bulkDelete();
+      }
+    });
+  }
+
+  // ═══════════ MOBILE TOUCH SUPPORT ═══════════
+  function setupMobileTouchSupport() {
+    let touchTimer = null;
+    let touchStarted = false;
+
+    document.querySelectorAll('.admin-link-item').forEach((linkItem, index) => {
+      const checkbox = linkItem.querySelector('.link-checkbox');
+      if (!checkbox) return;
+
+      // Long-press to select (300ms)
+      linkItem.addEventListener('touchstart', (e) => {
+        // Don't interfere with buttons/toggles
+        if (e.target.closest('.admin-link-actions') || e.target.closest('.toggle-switch')) return;
+
+        touchStarted = true;
+        touchTimer = setTimeout(() => {
+          if (touchStarted) {
+            // Haptic feedback if supported
+            if (navigator.vibrate) {
+              navigator.vibrate(50);
+            }
+            
+            const linkId = checkbox.dataset.linkId;
+            bulkSelection.toggleLink(linkId, index);
+            
+            // Visual feedback
+            linkItem.style.transform = 'scale(0.98)';
+            setTimeout(() => linkItem.style.transform = '', 100);
+          }
+        }, 300);
+      });
+
+      linkItem.addEventListener('touchend', () => {
+        touchStarted = false;
+        if (touchTimer) {
+          clearTimeout(touchTimer);
+          touchTimer = null;
+        }
+      });
+
+      linkItem.addEventListener('touchmove', () => {
+        touchStarted = false;
+        if (touchTimer) {
+          clearTimeout(touchTimer);
+          touchTimer = null;
+        }
       });
     });
   }
@@ -450,7 +583,7 @@
     bulkSelection.clearSelection();
   });
 
-  // ═══════════ CONFIRMATION MODAL ═══════════
+  // ═══════════ ENHANCED CONFIRMATION MODAL ═══════════
   function showConfirmModal(title, message) {
     return new Promise((resolve) => {
       const modal = document.getElementById('confirmModal');
@@ -462,14 +595,25 @@
 
       titleEl.textContent = title;
       messageEl.textContent = message;
+      
+      // Add entrance animation
       modal.classList.add('active');
+      modal.querySelector('.modal-content').style.animation = 'modalSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
 
       const cleanup = () => {
-        modal.classList.remove('active');
+        // Add exit animation
+        const content = modal.querySelector('.modal-content');
+        content.style.animation = 'modalSlideOut 0.3s ease-out';
+        setTimeout(() => {
+          modal.classList.remove('active');
+          content.style.animation = '';
+        }, 300);
+        
         confirmBtn.removeEventListener('click', handleConfirm);
         cancelBtn.removeEventListener('click', handleCancel);
         closeBtn.removeEventListener('click', handleCancel);
         modal.removeEventListener('click', handleBackdropClick);
+        document.removeEventListener('keydown', handleKeyPress);
       };
 
       const handleConfirm = () => {
@@ -488,10 +632,24 @@
         }
       };
 
+      const handleKeyPress = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleConfirm();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          handleCancel();
+        }
+      };
+
       confirmBtn.addEventListener('click', handleConfirm);
       cancelBtn.addEventListener('click', handleCancel);
       closeBtn.addEventListener('click', handleCancel);
       modal.addEventListener('click', handleBackdropClick);
+      document.addEventListener('keydown', handleKeyPress);
+
+      // Focus confirm button for keyboard accessibility
+      setTimeout(() => confirmBtn.focus(), 100);
     });
   }
 
@@ -880,6 +1038,7 @@
     loadLinks();
     loadProfile();
     initPublicUrl();
+    setupKeyboardShortcuts();
   });
 
   // ─── Public URL Bar ───
