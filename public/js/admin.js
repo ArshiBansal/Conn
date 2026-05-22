@@ -8,6 +8,190 @@
   let currentEditId = null;
   let selectedTheme = 'midnight';
 
+  // ═══════════ BULK SELECTION MANAGER ═══════════
+  class BulkSelectionManager {
+    constructor() {
+      this.selectedIds = new Set(); // O(1) lookup performance
+      this.toolbar = document.getElementById('bulkToolbar');
+      this.countDisplay = document.getElementById('bulkCount');
+      this.selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    }
+
+    selectLink(id) {
+      this.selectedIds.add(id);
+      this.updateUI();
+    }
+
+    deselectLink(id) {
+      this.selectedIds.delete(id);
+      this.updateUI();
+    }
+
+    toggleLink(id) {
+      if (this.selectedIds.has(id)) {
+        this.deselectLink(id);
+      } else {
+        this.selectLink(id);
+      }
+    }
+
+    selectAll(linkIds) {
+      linkIds.forEach(id => this.selectedIds.add(id));
+      this.updateUI();
+    }
+
+    clearSelection() {
+      this.selectedIds.clear();
+      this.updateUI();
+    }
+
+    getSelectedCount() {
+      return this.selectedIds.size;
+    }
+
+    getSelectedIds() {
+      return Array.from(this.selectedIds);
+    }
+
+    hasSelection() {
+      return this.selectedIds.size > 0;
+    }
+
+    updateUI() {
+      const count = this.getSelectedCount();
+      
+      // Update toolbar visibility
+      if (count > 0) {
+        this.toolbar.classList.add('visible');
+        this.countDisplay.textContent = `${count} selected`;
+      } else {
+        this.toolbar.classList.remove('visible');
+      }
+
+      // Update checkboxes in DOM
+      document.querySelectorAll('.link-checkbox').forEach(checkbox => {
+        const linkId = checkbox.dataset.linkId;
+        checkbox.checked = this.selectedIds.has(linkId);
+        
+        // Update parent link item visual state
+        const linkItem = checkbox.closest('.admin-link-item');
+        if (linkItem) {
+          linkItem.classList.toggle('selected', this.selectedIds.has(linkId));
+        }
+      });
+
+      // Update select all checkbox
+      const allCheckboxes = document.querySelectorAll('.link-checkbox');
+      if (allCheckboxes.length > 0) {
+        this.selectAllCheckbox.checked = count === allCheckboxes.length;
+        this.selectAllCheckbox.indeterminate = count > 0 && count < allCheckboxes.length;
+      } else {
+        this.selectAllCheckbox.checked = false;
+        this.selectAllCheckbox.indeterminate = false;
+      }
+    }
+
+    setLoading(isLoading) {
+      this.toolbar.classList.toggle('loading', isLoading);
+    }
+  }
+
+  // ═══════════ BULK ACTIONS HANDLER ═══════════
+  class BulkActionsHandler {
+    constructor(selectionManager) {
+      this.selectionManager = selectionManager;
+    }
+
+    async bulkEnable() {
+      const ids = this.selectionManager.getSelectedIds();
+      if (ids.length === 0) return;
+
+      this.selectionManager.setLoading(true);
+      
+      try {
+        const response = await fetch('/api/links/bulk-update', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ linkIds: ids, active: true })
+        });
+
+        if (!response.ok) throw new Error('Failed to enable links');
+
+        showToast(`${ids.length} link${ids.length > 1 ? 's' : ''} enabled`);
+        this.selectionManager.clearSelection();
+        await loadLinks();
+        reloadPreview();
+      } catch (err) {
+        showToast('Failed to enable links', 'error');
+      } finally {
+        this.selectionManager.setLoading(false);
+      }
+    }
+
+    async bulkDisable() {
+      const ids = this.selectionManager.getSelectedIds();
+      if (ids.length === 0) return;
+
+      this.selectionManager.setLoading(true);
+      
+      try {
+        const response = await fetch('/api/links/bulk-update', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ linkIds: ids, active: false })
+        });
+
+        if (!response.ok) throw new Error('Failed to disable links');
+
+        showToast(`${ids.length} link${ids.length > 1 ? 's' : ''} disabled`);
+        this.selectionManager.clearSelection();
+        await loadLinks();
+        reloadPreview();
+      } catch (err) {
+        showToast('Failed to disable links', 'error');
+      } finally {
+        this.selectionManager.setLoading(false);
+      }
+    }
+
+    async bulkDelete() {
+      const ids = this.selectionManager.getSelectedIds();
+      if (ids.length === 0) return;
+
+      const confirmed = await showConfirmModal(
+        'Delete Links',
+        `Are you sure you want to delete ${ids.length} link${ids.length > 1 ? 's' : ''}? This action cannot be undone.`
+      );
+
+      if (!confirmed) return;
+
+      this.selectionManager.setLoading(true);
+      
+      try {
+        const response = await fetch('/api/links/bulk-delete', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ linkIds: ids })
+        });
+
+        if (!response.ok) throw new Error('Failed to delete links');
+
+        showToast(`${ids.length} link${ids.length > 1 ? 's' : ''} deleted`);
+        this.selectionManager.clearSelection();
+        await loadLinks();
+        reloadPreview();
+      } catch (err) {
+        showToast('Failed to delete links', 'error');
+      } finally {
+        this.selectionManager.setLoading(false);
+      }
+    }
+  }
+
+  // Initialize bulk operations
+  const bulkSelection = new BulkSelectionManager();
+  const bulkActions = new BulkActionsHandler(bulkSelection);
+
   // ─── Theme Definitions ───
   const THEMES = [
     { id: 'midnight',       name: 'Midnight',        tag: 'Default',  bg: 'linear-gradient(135deg, #0a0a0a, #1a0a2e, #0a0a0a)',   colors: ['#a855f7','#c084fc','#f5f5f5'] },
@@ -117,6 +301,7 @@
           <h3>No links yet</h3>
           <p>Click "Add Link" to create your first link.</p>
         </div>`;
+      bulkSelection.clearSelection();
       return;
     }
 
@@ -135,6 +320,9 @@
 
       return `
       <div class="admin-link-item ${!link.active ? 'inactive' : ''}" data-id="${link.id}">
+        <div class="link-checkbox-wrapper">
+          <input type="checkbox" class="link-checkbox" data-link-id="${link.id}">
+        </div>
         <div class="drag-handle" title="Drag to reorder">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/>
@@ -166,6 +354,8 @@
     `;}).join('');
 
     setupDragAndDrop();
+    setupBulkSelectionListeners();
+    bulkSelection.updateUI();
   }
 
   // ─── Drag & Drop ───
@@ -219,6 +409,90 @@
       if (offset < 0 && offset > closest.offset) return { offset, element: child };
       return closest;
     }, { offset: Number.NEGATIVE_INFINITY }).element;
+  }
+
+  // ═══════════ BULK SELECTION LISTENERS ═══════════
+  function setupBulkSelectionListeners() {
+    // Individual checkbox listeners
+    document.querySelectorAll('.link-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const linkId = checkbox.dataset.linkId;
+        bulkSelection.toggleLink(linkId);
+      });
+    });
+  }
+
+  // Select All checkbox
+  document.getElementById('selectAllCheckbox')?.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      const allLinkIds = [...document.querySelectorAll('.link-checkbox')].map(cb => cb.dataset.linkId);
+      bulkSelection.selectAll(allLinkIds);
+    } else {
+      bulkSelection.clearSelection();
+    }
+  });
+
+  // Bulk toolbar action buttons
+  document.getElementById('bulkEnableBtn')?.addEventListener('click', () => {
+    bulkActions.bulkEnable();
+  });
+
+  document.getElementById('bulkDisableBtn')?.addEventListener('click', () => {
+    bulkActions.bulkDisable();
+  });
+
+  document.getElementById('bulkDeleteBtn')?.addEventListener('click', () => {
+    bulkActions.bulkDelete();
+  });
+
+  document.getElementById('bulkClearBtn')?.addEventListener('click', () => {
+    bulkSelection.clearSelection();
+  });
+
+  // ═══════════ CONFIRMATION MODAL ═══════════
+  function showConfirmModal(title, message) {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('confirmModal');
+      const titleEl = document.getElementById('confirmTitle');
+      const messageEl = document.getElementById('confirmMessage');
+      const confirmBtn = document.getElementById('confirmActionBtn');
+      const cancelBtn = document.getElementById('confirmCancelBtn');
+      const closeBtn = document.getElementById('confirmModalClose');
+
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      modal.classList.add('active');
+
+      const cleanup = () => {
+        modal.classList.remove('active');
+        confirmBtn.removeEventListener('click', handleConfirm);
+        cancelBtn.removeEventListener('click', handleCancel);
+        closeBtn.removeEventListener('click', handleCancel);
+        modal.removeEventListener('click', handleBackdropClick);
+      };
+
+      const handleConfirm = () => {
+        cleanup();
+        resolve(true);
+      };
+
+      const handleCancel = () => {
+        cleanup();
+        resolve(false);
+      };
+
+      const handleBackdropClick = (e) => {
+        if (e.target === modal) {
+          handleCancel();
+        }
+      };
+
+      confirmBtn.addEventListener('click', handleConfirm);
+      cancelBtn.addEventListener('click', handleCancel);
+      closeBtn.addEventListener('click', handleCancel);
+      modal.addEventListener('click', handleBackdropClick);
+    });
   }
 
   // ─── Modal ───
