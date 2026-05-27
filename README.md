@@ -147,6 +147,8 @@ New-Item -ItemType File -Name ".env"
 notepad .env
 ```
 
+> ⚠️ **IMPORTANT:** `JWT_SECRET` is **required**. The server will exit immediately if it's missing.
+
 Add the following to your `.env` file:
 ```env
 SUPABASE_URL=https://your-project-id.supabase.co
@@ -354,14 +356,6 @@ Verify that:
 - Database tables were created successfully
 
 ### JWT errors
-Ensure `JWT_SECRET` is properly added in the `.env` file.
-
-### Google Authentication issues
-Verify that:
-- `GOOGLE_CLIENT_ID` is correctly added in `.env`
-- Google OAuth origins include both localhost and production URLs
-- Google Cloud OAuth credentials are configured correctly
-- Browser popup blocking is disabled for the site
 
 ---
 
