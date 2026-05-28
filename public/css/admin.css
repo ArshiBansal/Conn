@@ -1489,3 +1489,63 @@ textarea.form-input {
     gap: 6px;
   }
 }
+/* ═════════ Skeleton Loading ═════════ */
+
+.skeleton-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255,255,255,0.08);
+  border-radius: 10px;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -150px;
+  width: 150px;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255,255,255,0.12),
+    transparent
+  );
+  animation: shimmer 1.2s infinite;
+}
+
+.skeleton-checkbox {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+
+.skeleton-title {
+  width: 220px;
+  height: 18px;
+  margin-bottom: 10px;
+}
+
+.skeleton-url {
+  width: 180px;
+  height: 14px;
+}
+
+.skeleton-clicks {
+  width: 50px;
+  height: 18px;
+  margin-left: auto;
+}
+
+@keyframes shimmer {
+  100% {
+    left: 100%;
+  }
+}

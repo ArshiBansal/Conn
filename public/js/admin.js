@@ -296,6 +296,7 @@
   // ═══════════ LINKS ═══════════
 
   async function loadLinks() {
+      showLinksSkeleton();
     try {
       const res = await fetch('/api/links');
       const links = await res.json();
@@ -304,6 +305,24 @@
       showToast('Failed to load links', 'error');
     }
   }
+  function showLinksSkeleton() {
+  const list = document.getElementById('adminLinksList');
+
+  list.innerHTML = `
+    ${Array(4).fill(`
+      <div class="admin-link-item skeleton-card">
+        <div class="skeleton skeleton-checkbox"></div>
+
+        <div class="admin-link-info">
+          <div class="skeleton skeleton-title"></div>
+          <div class="skeleton skeleton-url"></div>
+        </div>
+
+        <div class="skeleton skeleton-clicks"></div>
+      </div>
+    `).join('')}
+  `;
+}
 
   function renderAdminLinks(links) {
     const list = document.getElementById('adminLinksList');
@@ -316,7 +335,7 @@
       badge.className = 'link-count-badge';
       headerActions.insertBefore(badge, headerActions.firstChild);
     }
-    badge.textContent = `${links.length} links`;
+    badge.textContent = `${links?.length || 0} links`;
 
     if (links.length === 0) {
       list.innerHTML = `
@@ -1011,7 +1030,7 @@
 
   // ─── Init ───
   document.addEventListener('DOMContentLoaded', async () => {
-    checkAuth();
+    //checkAuth();
     loadLinks();
     loadProfile();
     initPublicUrl();
