@@ -805,4 +805,40 @@ input, textarea, select {
     padding: 0.5rem 0;
   }
 }
+.password-wrapper{
+    position: relative;
+}
+
+.password-wrapper .form-input{
+    padding-right: 52px;
+}
+
+.toggle-password{
+    position:absolute;
+    right:14px;
+    top:50%;
+    transform:translateY(-50%);
+    border:none;
+    background:transparent;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#8b8b8b;
+    transition:.25s ease;
+    padding:4px;
+}
+
+.toggle-password:hover{
+    color:#ffffff;
+    transform:translateY(-50%) scale(1.08);
+}
+
+.light-mode .toggle-password:hover{
+    color:#111827;
+}
+
+.toggle-password svg{
+    transition:.2s;
+}
 
